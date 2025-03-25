@@ -188,7 +188,7 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
     time.sleep(10)
 
     # compute FID and IS
-    if log_writer is not None:
+    if log_writer is not None and not args.skip_metrics:
         if args.img_size == 64:
             fid_statistics_file = 'fid_stats/adm_in64_stats.npz'
         elif args.img_size == 256:

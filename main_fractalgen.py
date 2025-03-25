@@ -21,11 +21,11 @@ from engine_fractalgen import train_one_epoch, compute_nll, evaluate
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Fractal Generative Models', add_help=False)
-    parser.add_argument('--batch_size', default=64, type=int,
+    parser.add_argument('--batch_size', default=128, type=int,
                         help='Batch size per GPU (effective batch size = batch_size * # GPUs)')
-    parser.add_argument('--epochs', default=400, type=int)
+    parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--seed', default=0, type=int)
-    parser.add_argument('--resume', default='',
+    parser.add_argument('--resume', default='./output_dir',
                         help='Folder that contains checkpoint to resume from')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='Starting epoch')
@@ -36,52 +36,55 @@ def get_args_parser():
     parser.set_defaults(pin_mem=True)
 
     # Model parameters
-    parser.add_argument('--model', default='fractalmar_in64', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='fractalmar_in32', type=str, metavar='MODEL',
                         help='Name of the model to train')
-    parser.add_argument('--img_size', default=64, type=int, help='Image size')
+    parser.add_argument('--img_size', default=32, type=int, help='Image size')
 
     # Generation parameters
-    parser.add_argument('--num_iter_list', default='64,16', type=str,
+    parser.add_argument('--num_iter_list', default='32,8', type=str,
                         help='Number of autoregressive iterations for each fractal level')
-    parser.add_argument('--num_images', default=50000, type=int,
+    parser.add_argument('--num_images', default=100, type=int,
                         help='Number of images to generate')
-    parser.add_argument('--cfg', default=1.0, type=float,
+    parser.add_argument('--cfg', default=10.0, type=float,
                         help='Classifier-free guidance factor')
+    # prediction = unconditional_prediction + cfg * (conditional_prediction - unconditional_prediction)
     parser.add_argument('--cfg_schedule', default='linear', type=str)
     parser.add_argument('--temperature', default=1.0, type=float,
                         help='Sampling temperature')
     parser.add_argument('--filter_threshold', default=1e-4, type=float,
                         help='Filter threshold for low probability tokens in cfg')
     parser.add_argument('--label_drop_prob', default=0.1, type=float)
-    parser.add_argument('--eval_freq', type=int, default=40,
+    parser.add_argument('--eval_freq', type=int, default=1,
                         help='Frequency (in epochs) for evaluation')
-    parser.add_argument('--save_last_freq', type=int, default=5,
+    parser.add_argument('--save_last_freq', type=int, default=1,
                         help='Frequency (in epochs) to save checkpoints')
     parser.add_argument('--online_eval', action='store_true')
     parser.add_argument('--evaluate_gen', action='store_true')
     parser.add_argument('--evaluate_nll', action='store_true')
-    parser.add_argument('--gen_bsz', type=int, default=1024,
+    parser.add_argument('--gen_bsz', type=int, default=16,
                         help='Generation batch size')
-    parser.add_argument('--nll_bsz', type=int, default=128,
+    parser.add_argument('--nll_bsz', type=int, default=16,
                         help='NLL evaluation batch size')
     parser.add_argument('--nll_forward_number', type=int, default=1,
                         help='Number of forward passes used to evaluate the NLL for each data sample. '
                              'This does not affect the NLL of  AR model, but for the MAR model, multiple passes (each '
                              'randomly sampling a masking ratio) result in a more accurate NLL estimation.'
     )
+    parser.add_argument('--skip_metrics', action='store_true',
+                   help='Skip FID/KID metrics calculation')
     # Optimizer parameters
     parser.add_argument('--weight_decay', type=float, default=0.05,
                         help='Weight decay (default: 0.05)')
     parser.add_argument('--grad_checkpointing', action='store_true')
     parser.add_argument('--lr', type=float, default=None, metavar='LR',
                         help='Learning rate (absolute)')
-    parser.add_argument('--blr', type=float, default=5e-5, metavar='LR',
+    parser.add_argument('--blr', type=float, default=1e-4, metavar='LR',
                         help='Base learning rate: absolute_lr = base_lr * total_batch_size / 256')
     parser.add_argument('--min_lr', type=float, default=0., metavar='LR',
                         help='Minimum LR for cyclic schedulers that hit 0')
     parser.add_argument('--lr_schedule', type=str, default='cosine',
                         help='Learning rate schedule')
-    parser.add_argument('--warmup_epochs', type=int, default=40, metavar='N',
+    parser.add_argument('--warmup_epochs', type=int, default=1, metavar='N',
                         help='Epochs to warm up LR')
 
     # Fractal generator parameters
@@ -99,9 +102,9 @@ def get_args_parser():
                         help='Projection dropout rate')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='./data/imagenet', type=str,
+    parser.add_argument('--data_path', default='./data', type=str,
                         help='Path to the dataset')
-    parser.add_argument('--class_num', default=1000, type=int)
+    parser.add_argument('--class_num', default=10, type=int)
     parser.add_argument('--output_dir', default='./output_dir',
                         help='Directory to save outputs (empty for no saving)')
     parser.add_argument('--device', default='cuda',
@@ -142,21 +145,24 @@ def main(args):
     else:
         log_writer = None
 
-    # Data augmentation transforms (following DiT and ADM)
+    # Data transforms for MNIST
+    # Convert to 3 channels and resize to match model's expected dimensions
     transform_train = transforms.Compose([
-        transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.img_size)),
-        transforms.RandomHorizontalFlip(),
+        transforms.Resize(args.img_size),
         transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        transforms.Lambda(lambda x: x.repeat(3, 1, 1)),  # Convert grayscale to 3 channels
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  # Use ImageNet normalization for model compatibility
     ])
     transform_val = transforms.Compose([
-        transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.img_size)),
+        transforms.Resize(args.img_size),
         transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        transforms.Lambda(lambda x: x.repeat(3, 1, 1)),  # Convert grayscale to 3 channels
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  # Use ImageNet normalization for model compatibility
     ])
 
-    dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'), transform=transform_train)
-    dataset_val = datasets.ImageFolder(os.path.join(args.data_path, 'val'), transform=transform_val)
+    # Load MNIST datasets
+    dataset_train = datasets.MNIST(args.data_path, train=True, download=True, transform=transform_train)
+    dataset_val = datasets.MNIST(args.data_path, train=False, download=True, transform=transform_val)
 
     sampler_train = torch.utils.data.DistributedSampler(
         dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True

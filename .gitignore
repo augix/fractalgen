@@ -1,0 +1,6 @@
+.AppleDouble/
+.DS_Store
+__pycache__/
+data/
+output_dir/
+src/
