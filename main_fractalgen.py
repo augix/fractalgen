@@ -21,9 +21,9 @@ from engine_fractalgen import train_one_epoch, compute_nll, evaluate
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Fractal Generative Models', add_help=False)
-    parser.add_argument('--batch_size', default=128, type=int,
+    parser.add_argument('--batch_size', default=2, type=int,
                         help='Batch size per GPU (effective batch size = batch_size * # GPUs)')
-    parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--resume', default='./output_dir',
                         help='Folder that contains checkpoint to resume from')
@@ -45,7 +45,7 @@ def get_args_parser():
                         help='Number of autoregressive iterations for each fractal level')
     parser.add_argument('--num_images', default=100, type=int,
                         help='Number of images to generate')
-    parser.add_argument('--cfg', default=10.0, type=float,
+    parser.add_argument('--cfg', default=6.5, type=float,
                         help='Classifier-free guidance factor')
     # prediction = unconditional_prediction + cfg * (conditional_prediction - unconditional_prediction)
     parser.add_argument('--cfg_schedule', default='linear', type=str)

@@ -84,7 +84,6 @@ main_fractalgen.py \
 
 Example script for training FractalMAR on ImageNet 64x64 for 800 epochs:
 ```
-torchrun --nproc_per_node=2 --nnodes=1 main_fractalgen.py --online_eval --skip_metrics
 
 torchrun --nproc_per_node=2 --nnodes=1 --node_rank=${NODE_RANK} --master_addr=${MASTER_ADDR} --master_port=${MASTER_PORT} \
 main_fractalgen.py \

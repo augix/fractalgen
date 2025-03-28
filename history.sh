@@ -1,0 +1,2 @@
+torchrun --nproc_per_node=2 --nnodes=1 main_fractalgen.py --skip_metrics --online_eval --batch_size 128
+torchrun --nproc_per_node=1 --nnodes=1 main_fractalgen.py --skip_metrics --online_eval --batch_size 2 

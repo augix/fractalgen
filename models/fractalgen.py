@@ -51,9 +51,12 @@ class FractalGen(nn.Module):
             generator = MAR
         else:
             raise NotImplementedError
+        
+        self.seq_len = (img_size_list[fractal_level] // img_size_list[fractal_level+1]) ** 2
+        self.patch_size = img_size_list[fractal_level+1]
         self.generator = generator(
-            seq_len=(img_size_list[fractal_level] // img_size_list[fractal_level+1]) ** 2,
-            patch_size=img_size_list[fractal_level+1],
+            seq_len=self.seq_len,
+            patch_size=self.patch_size,
             cond_embed_dim=embed_dim_list[fractal_level-1] if fractal_level > 0 else embed_dim_list[0],
             embed_dim=embed_dim_list[fractal_level],
             num_blocks=num_blocks_list[fractal_level],
@@ -83,6 +86,7 @@ class FractalGen(nn.Module):
                 r_weight=r_weight,
                 grad_checkpointing=grad_checkpointing,
                 fractal_level=fractal_level+1
+                # the above line defines the fractal level of current generator
             )
         else:
             # The final fractal level uses PixelLoss.
@@ -112,7 +116,12 @@ class FractalGen(nn.Module):
             cond_list = [class_embedding for _ in range(5)]
 
         # Get image patches and conditions for the next level
+        # print(f'fractal_level: {self.fractal_level}')
+        # print(f'seq_len: {self.seq_len}')
+        # print(f'patch_size: {self.patch_size}')
+        # print(f'imgs before generator: {imgs.shape}')
         imgs, cond_list, guiding_pixel_loss = self.generator(imgs, cond_list)
+        # print(f'imgs after generator: {imgs.shape}')
         # Compute loss recursively from the next fractal level.
         loss = self.next_fractal(imgs, cond_list)
         return loss + guiding_pixel_loss
